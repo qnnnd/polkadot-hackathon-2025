@@ -1,7 +1,5 @@
 # Life++ PoC - 基于 Polkadot REVM 的认知证明系统
 
-English | 中文
-
 [`English`](./README.en.md) | [`中文`](./README.md)
 
 ## 🎯 项目概述

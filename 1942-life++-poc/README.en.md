@@ -1,7 +1,5 @@
 # Life++ PoC - Cognitive Proof System on Polkadot REVM
 
-English | 中文
-
 [`English`](./README.en.md) | [`中文`](./README.md)
 
 ## 🎯 Project Overview

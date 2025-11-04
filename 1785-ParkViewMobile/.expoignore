@@ -1,0 +1,33 @@
+# Expo
+.expo/
+dist/
+web-build/
+
+# Next.js - 忽略 Web 端文件
+.next/
+out/
+
+# 依赖
+node_modules/
+
+# 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 环境变量
+.env*.local
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试
+coverage/

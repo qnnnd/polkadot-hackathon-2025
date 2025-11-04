@@ -3,7 +3,7 @@
 ## 团队/项目介绍
 - 团队名称：有来无去
 - 项目名称：Altarot OnChain 2.0
-- 成员/联系方式：[@yourgithub](https://github.com/ljjathena)
+- 成员/联系方式：[@ljjathena](https://github.com/ljjathena)
 
 ## 项目简介
 Altarot OnChain 2.0 是一个基于区块链的塔罗牌 AI 占卜 & NFT 铸造 DApp，支持链上订单、AI 解读、NFT 铸造与排行榜功能，兼容多链和自托管后端。

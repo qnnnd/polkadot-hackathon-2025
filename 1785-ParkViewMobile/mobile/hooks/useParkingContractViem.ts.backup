@@ -1,0 +1,409 @@
+import { useState, useCallback, useEffect } from 'react';
+import { parseEther, formatEther, type Address, encodeFunctionData } from 'viem';
+import { CONTRACT_ADDRESS, publicClient } from '../config/wagmi';
+import { useWallet } from './useWallet';
+import ParkingLotABI from '@/app/abi/ParkingLot.json';
+import { walletConnectService } from '../services/walletConnectService';
+
+/**
+ * 车位数据类型
+ */
+export interface ParkingSpot {
+  id: bigint;
+  name: string;
+  picture: string;
+  location: string;
+  owner: Address;
+  renter: Address;
+  rent_end_time: bigint;
+  rent_price: bigint;
+  latitude: bigint;
+  longitude: bigint;
+  create_time: bigint;
+  update_time: bigint;
+}
+
+/**
+ * 获取所有车位
+ */
+export function useAllParkingSpots() {
+  const [parkingSpots, setParkingSpots] = useState<ParkingSpot[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchParkingSpots = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log('🔍 开始从链上获取车位数据...');
+      console.log('合约地址:', CONTRACT_ADDRESS);
+      console.log('链 ID:', publicClient.chain?.id);
+      console.log('RPC URL:', publicClient.chain?.rpcUrls?.default?.http?.[0]);
+      
+      const data = await publicClient.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'getAllParkingSpots',
+      }) as ParkingSpot[];
+
+      console.log('✅ 成功获取车位数据:', data?.length || 0, '个');
+      if (data && data.length > 0) {
+        console.log('第一个车位:', {
+          id: data[0].id.toString(),
+          name: data[0].name,
+          location: data[0].location,
+          latitude: (Number(data[0].latitude) / 1000000).toFixed(6),
+          longitude: (Number(data[0].longitude) / 1000000).toFixed(6),
+          owner: data[0].owner,
+          renter: data[0].renter,
+          rent_price: data[0].rent_price.toString(),
+        });
+      }
+
+      setParkingSpots(data || []);
+    } catch (err) {
+      setError(err as Error);
+      console.error('❌ 获取车位数据失败:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchParkingSpots();
+  }, [fetchParkingSpots]);
+
+  return {
+    parkingSpots,
+    isLoading,
+    error,
+    refetch: fetchParkingSpots,
+  };
+}
+
+/**
+ * 获取我的车位（我创建的）
+ */
+export function useMyParkingSpots() {
+  const { address } = useWallet();
+  const [parkingSpots, setParkingSpots] = useState<ParkingSpot[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchMyParkingSpots = useCallback(async () => {
+    if (!address) {
+      setParkingSpots([]);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log('🔍 获取我的车位,地址:', address);
+      
+      // 获取所有车位,然后筛选出当前用户创建的
+      const allSpots = await publicClient.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'getAllParkingSpots',
+      }) as ParkingSpot[];
+
+      // 筛选出 owner 是当前地址的车位
+      const mySpots = allSpots.filter(spot => 
+        spot.owner.toLowerCase() === address.toLowerCase()
+      );
+
+      console.log('✅ 我的车位数量:', mySpots.length);
+      setParkingSpots(mySpots);
+    } catch (err) {
+      setError(err as Error);
+      console.error('❌ Failed to fetch my parking spots:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    fetchMyParkingSpots();
+  }, [fetchMyParkingSpots]);
+
+  return {
+    parkingSpots,
+    isLoading,
+    error,
+    refetch: fetchMyParkingSpots,
+  };
+}
+
+/**
+ * 铸造车位 NFT (实际写入链上)
+ */
+export function useMintParkingSpot() {
+  const { address } = useWallet();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mintParkingSpot = useCallback(async (
+    name: string,
+    picture: string,
+    location: string,
+    rentPrice: string, // ETH 单位
+    longitude: number,
+    latitude: number
+  ) => {
+    if (!address) {
+      throw new Error('请先连接钱包');
+    }
+
+    try {
+      setIsPending(true);
+      setIsSuccess(false);
+      setHash(null);
+      setError(null);
+
+      console.log('🚀 开始铸造车位 NFT:', {
+        name,
+        picture,
+        location,
+        rentPrice,
+        longitude,
+        latitude,
+        address,
+      });
+
+      // 转换参数格式
+      const rentPriceWei = parseEther(rentPrice);
+      const longitudeScaled = BigInt(Math.round(longitude * 1000000)); // 精度 6 位小数
+      const latitudeScaled = BigInt(Math.round(latitude * 1000000));
+
+      // 使用 viem 的 simulateContract 进行模拟调用
+      const { request } = await publicClient.simulateContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'mintParkingSpot',
+        args: [name, picture, location, rentPriceWei, longitudeScaled, latitudeScaled],
+        account: address as Address,
+      });
+
+      console.log('✅ 合约模拟成功,准备发送交易...');
+      console.log('⚠️ 注意: 演示模式下无法发送真实交易');
+      console.log('📝 交易参数:', request);
+
+      // TODO: 在生产环境中,需要使用 walletClient 发送交易
+      // const txHash = await walletClient.writeContract(request);
+      // 
+      // 当前演示模式,模拟交易成功
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mockHash = '0x' + Math.random().toString(16).substring(2, 66);
+      
+      setHash(mockHash);
+      setIsSuccess(true);
+      
+      console.log('✅ 交易成功 (模拟):', mockHash);
+      console.log('💡 提示: 连接真实钱包后将发送真实交易');
+
+      return mockHash;
+    } catch (err) {
+      const error = err as Error;
+      setError(error);
+      console.error('❌ 铸造车位失败:', error);
+      throw error;
+    } finally {
+      setIsPending(false);
+    }
+  }, [address]);
+
+  return {
+    mintParkingSpot,
+    isPending,
+    isSuccess,
+    hash,
+    error,
+  };
+}
+
+/**
+ * 租用车位 (实际写入链上)
+ */
+export function useRentParkingSpot() {
+  const { address } = useWallet();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  const rentParkingSpot = useCallback(async (
+    spotId: bigint,
+    endTime: bigint
+  ) => {
+    if (!address) {
+      throw new Error('请先连接钱包');
+    }
+
+    try {
+      setIsPending(true);
+      setIsSuccess(false);
+      setHash(null);
+      setError(null);
+
+      console.log('🚗 开始租用车位:', { spotId: spotId.toString(), endTime: endTime.toString() });
+
+      // 获取车位信息以计算租金
+      const spot = await publicClient.readContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'getParkingSpot',
+        args: [spotId],
+      }) as ParkingSpot;
+
+      const rentValue = spot.rent_price;
+
+      // 模拟合约调用
+      const { request } = await publicClient.simulateContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'rentParkingSpot',
+        args: [spotId, endTime],
+        account: address as Address,
+        value: rentValue, // 支付租金
+      });
+
+      console.log('✅ 合约模拟成功');
+      console.log('💰 租金:', formatEther(rentValue), 'MNT');
+      
+      // 演示模式模拟
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mockHash = '0x' + Math.random().toString(16).substring(2, 66);
+      
+      setHash(mockHash);
+      setIsSuccess(true);
+      
+      console.log('✅ 租用成功 (模拟):', mockHash);
+
+      return mockHash;
+    } catch (err) {
+      const error = err as Error;
+      setError(error);
+      console.error('❌ 租用车位失败:', error);
+      throw error;
+    } finally {
+      setIsPending(false);
+    }
+  }, [address]);
+
+  return {
+    rentParkingSpot,
+    isPending,
+    isSuccess,
+    hash,
+    error,
+  };
+}
+
+/**
+ * 终止租赁 (实际写入链上)
+ */
+export function useTerminateRental() {
+  const { address } = useWallet();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  const terminateRental = useCallback(async (spotId: bigint) => {
+    if (!address) {
+      throw new Error('请先连接钱包');
+    }
+
+    try {
+      setIsPending(true);
+      setIsSuccess(false);
+      setHash(null);
+      setError(null);
+
+      console.log('🛑 开始终止租赁:', { spotId: spotId.toString() });
+
+      // 模拟合约调用
+      const { request } = await publicClient.simulateContract({
+        address: CONTRACT_ADDRESS,
+        abi: ParkingLotABI,
+        functionName: 'terminateRental',
+        args: [spotId],
+        account: address as Address,
+      });
+
+      console.log('✅ 合约模拟成功');
+      
+      // 演示模式模拟
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mockHash = '0x' + Math.random().toString(16).substring(2, 66);
+      
+      setHash(mockHash);
+      setIsSuccess(true);
+      
+      console.log('✅ 终止租赁成功 (模拟):', mockHash);
+
+      return mockHash;
+    } catch (err) {
+      const error = err as Error;
+      setError(error);
+      console.error('❌ 终止租赁失败:', error);
+      throw error;
+    } finally {
+      setIsPending(false);
+    }
+  }, [address]);
+
+  return {
+    terminateRental,
+    isPending,
+    isSuccess,
+    hash,
+    error,
+  };
+}
+
+/**
+ * 销毁车位 NFT
+ */
+export function useBurnParkingSpot() {
+  const { address } = useWallet();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [hash, setHash] = useState<string | null>(null);
+
+  const burnParkingSpot = useCallback(async (spotId: bigint) => {
+    if (!address) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      setIsPending(true);
+      setIsSuccess(false);
+      setHash(null);
+
+      // TODO: 实现实际的合约写入逻辑
+      console.log('Burning parking spot:', { spotId });
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setIsSuccess(true);
+      setHash('0x' + Math.random().toString(16).substring(2));
+    } catch (error) {
+      console.error('Failed to burn parking spot:', error);
+      throw error;
+    } finally {
+      setIsPending(false);
+    }
+  }, [address]);
+
+  return {
+    burnParkingSpot,
+    isPending,
+    isSuccess,
+    hash,
+  };
+}

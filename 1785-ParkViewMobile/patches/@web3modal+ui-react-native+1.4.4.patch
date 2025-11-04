@@ -1,0 +1,11 @@
+diff --git a/node_modules/@web3modal/ui-react-native/package.json b/node_modules/@web3modal/ui-react-native/package.json
+--- a/node_modules/@web3modal/ui-react-native/package.json
++++ b/node_modules/@web3modal/ui-react-native/package.json
+@@ -36,7 +36,6 @@
+     "react": ">=16.8.0",
+     "react-native-svg": ">=13"
+   },
+-  "react-native": "src/index.ts",
+   "react-native-builder-bob": {
+     "source": "src",
+     "output": "lib",

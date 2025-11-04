@@ -1,0 +1,57 @@
+/**
+ * AsyncStorage Wrapper for Reown AppKit
+ * 
+ * AppKit 需要的 Storage 接口比 AsyncStorage 提供的更完整
+ * 这个 wrapper 实现了缺失的方法
+ */
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Storage } from '@reown/appkit-react-native';
+
+class AppKitAsyncStorage implements Storage {
+  async getKeys(): Promise<string[]> {
+    const keys = await AsyncStorage.getAllKeys();
+    return [...keys]; // 转换为可变数组
+  }
+
+  async getEntries<T = any>(): Promise<[string, T][]> {
+    const keys = await AsyncStorage.getAllKeys();
+    const entries: [string, T][] = [];
+    
+    for (const key of keys) {
+      const value = await AsyncStorage.getItem(key);
+      if (value !== null) {
+        try {
+          entries.push([key, JSON.parse(value) as T]);
+        } catch {
+          // 如果不能解析为 JSON,直接使用字符串
+          entries.push([key, value as T]);
+        }
+      }
+    }
+    
+    return entries;
+  }
+
+  async getItem<T = any>(key: string): Promise<T | undefined> {
+    const value = await AsyncStorage.getItem(key);
+    if (value === null) return undefined;
+    
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return value as T;
+    }
+  }
+
+  async setItem<T = any>(key: string, value: T): Promise<void> {
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    await AsyncStorage.setItem(key, stringValue);
+  }
+
+  async removeItem(key: string): Promise<void> {
+    await AsyncStorage.removeItem(key);
+  }
+}
+
+export const appKitStorage = new AppKitAsyncStorage();
